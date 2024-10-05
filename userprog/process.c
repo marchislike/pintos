@@ -169,29 +169,38 @@ error:
 /* 주어진 사용자 프로그램을 실행하기 위해 현재 실행 컨텍스트를 f_name으로 변경.
  * 실패 시 -1을 반환한다. */
 int
-process_exec (void *f_name) {
+process_exec (void *f_name) { //TODO : parsing 기능 구현
+// f_name은 문자열인데 위에서 (void *)로 넘겨받음! -> 문자열로 인식하기 위해서 char * 로 변환해줘야.
     char *file_name = f_name;  // 실행할 파일 이름
     bool success;  // 로드 성공 여부를 저장할 변수
 
-    /* 현재 스레드 구조체의 intr_frame을 사용할 수 없음.
-     * 이는 현재 스레드가 재스케줄링될 때 실행 정보가 해당 멤버에 저장되기 때문. */
-    struct intr_frame _if;
-    _if.ds = _if.es = _if.ss = SEL_UDSEG;  // 데이터 세그먼트, 스택 세그먼트 설정
-    _if.cs = SEL_UCSEG;  // 코드 세그먼트 설정
-    _if.eflags = FLAG_IF | FLAG_MBS;  // 인터럽트 플래그 및 마법 비트 설정
+	// ? 기존 코드 start ::
+    // /* 현재 스레드 구조체의 intr_frame을 사용할 수 없음.
+    //  * 이는 현재 스레드가 재스케줄링될 때 실행 정보가 해당 멤버에 저장되기 때문. */ //TODO :==========
+    // struct intr_frame _if;//_if : CPU의 레지스터 상태를 저장하는 데 사용
+	// //_if는 인터럽트 서비스 루틴이나 컨텍스트 스위칭 발생 시 현재 상태를 보존하거나 복원을 위해 사용
+	// // 아래는 세그먼트 레지스터이다.
+    // _if.ds = _if.es = _if.ss = SEL_UDSEG;  // 데이터 ,엑스트라, 스택 세그먼트 설정(메모리 세그먼트 정의)
+    // _if.cs = SEL_UCSEG;  // 코드 세그먼트 설정(현재 실행 중인 코드의 메모리 세그먼트를 가리킴)
+    // _if.eflags = FLAG_IF | FLAG_MBS;  // CPU의 인터럽트 플래그 및 마법 비트 설정
+	// //현재 CPU의 상태를 나타냄(인터럽트 허용, I/O권한 레벨 등)
 
-    /* 현재 실행 중인 프로세스의 컨텍스트 제거 */
-    process_cleanup ();
+    // /* 현재 실행 중인 프로세스의 컨텍스트 제거 */
+    // process_cleanup ();
+	// ? 기존 코드 end ::
 
     /* 바이너리 파일을 로드하고 초기화 */
-    success = load (file_name, &_if);
+    success = load (file_name, &_if); //적재 성공 시 1, 실패 시 0을 반환
 
     /* 로드에 실패한 경우 프로그램 종료 */
-    palloc_free_page (file_name);
+	// file_name은 프로그램 파일을 받기 위해 만든 임시 변수(load가 끝나면 메모리를 반환)
+    // palloc은 load()함수 내에서 file_name을 메모리에 올리는 과정에서 page allocation을 임시로 시행.
+	// => free가 필요
+	palloc_free_page (file_name);
     if (!success)
         return -1;
 
-    /* 성공적으로 로드되었으면 프로세스 실행 */
+    /* 성공적으로 로드되었으면 프로세스 실행(context switching) */
     do_iret (&_if);
     NOT_REACHED ();
 }
