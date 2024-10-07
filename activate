@@ -5,6 +5,7 @@ else
 	SOURCE="$0";
 fi;
 
+
 while [ -h "$SOURCE" ]; do
   DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
   SOURCE="$(readlink "$SOURCE")"
