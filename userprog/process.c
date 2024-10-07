@@ -166,44 +166,95 @@ error:
     thread_exit ();  // 오류 발생 시 스레드 종료
 }
 
+// TODO =================================
 /* 주어진 사용자 프로그램을 실행하기 위해 현재 실행 컨텍스트를 f_name으로 변경.
  * 실패 시 -1을 반환한다. */
-int
-process_exec (void *f_name) { //TODO : parsing 기능 구현
-// f_name은 문자열인데 위에서 (void *)로 넘겨받음! -> 문자열로 인식하기 위해서 char * 로 변환해줘야.
-    char *file_name = f_name;  // 실행할 파일 이름
-    bool success;  // 로드 성공 여부를 저장할 변수
+int process_exec(void *f_name)
+{ // 인자: 실행하려는 이진 파일의 이름
+    char *file_name = f_name;
+    bool success;
 
-	// ? 기존 코드 start ::
-    // /* 현재 스레드 구조체의 intr_frame을 사용할 수 없음.
-    //  * 이는 현재 스레드가 재스케줄링될 때 실행 정보가 해당 멤버에 저장되기 때문. */ //TODO :==========
-    // struct intr_frame _if;//_if : CPU의 레지스터 상태를 저장하는 데 사용
-	// //_if는 인터럽트 서비스 루틴이나 컨텍스트 스위칭 발생 시 현재 상태를 보존하거나 복원을 위해 사용
-	// // 아래는 세그먼트 레지스터이다.
-    // _if.ds = _if.es = _if.ss = SEL_UDSEG;  // 데이터 ,엑스트라, 스택 세그먼트 설정(메모리 세그먼트 정의)
-    // _if.cs = SEL_UCSEG;  // 코드 세그먼트 설정(현재 실행 중인 코드의 메모리 세그먼트를 가리킴)
-    // _if.eflags = FLAG_IF | FLAG_MBS;  // CPU의 인터럽트 플래그 및 마법 비트 설정
-	// //현재 CPU의 상태를 나타냄(인터럽트 허용, I/O권한 레벨 등)
+    /* We cannot use the intr_frame in the thread structure.
+     * This is because when current thread rescheduled,
+     * it stores the execution information to the member. */
+    struct intr_frame _if;
+    _if.ds = _if.es = _if.ss = SEL_UDSEG;
+    _if.cs = SEL_UCSEG;
+    _if.eflags = FLAG_IF | FLAG_MBS;
 
-    // /* 현재 실행 중인 프로세스의 컨텍스트 제거 */
-    // process_cleanup ();
-	// ? 기존 코드 end ::
+    /* We first kill the current context */
+    process_cleanup();
 
-    /* 바이너리 파일을 로드하고 초기화 */
-    success = load (file_name, &_if); //적재 성공 시 1, 실패 시 0을 반환
+    // Argument Passing ~
+    char *parse[64];
+    char *token, *save_ptr;
+    int count = 0;
+    for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr))
+        parse[count++] = token;
+    // ~ Argument Passing
 
-    /* 로드에 실패한 경우 프로그램 종료 */
-	// file_name은 프로그램 파일을 받기 위해 만든 임시 변수(load가 끝나면 메모리를 반환)
-    // palloc은 load()함수 내에서 file_name을 메모리에 올리는 과정에서 page allocation을 임시로 시행.
-	// => free가 필요
-	palloc_free_page (file_name);
+    /* And then load the binary */
+    success = load(file_name, &_if);
+    // 이진 파일을 디스크에서 메모리로 로드한다.
+    // 로드된 후 실행할 메인 함수의 시작 주소 필드 초기화 (if_.rip)
+    // user stack의 top 포인터 초기화 (if_.rsp)
+    // 위 과정을 성공하면 실행을 계속하고, 실패하면 스레드가 종료된다.
+
+    // Argument Passing ~
+    argument_stack(parse, count, &_if.rsp); // 함수 내부에서 parse와 rsp의 값을 직접 변경하기 위해 주소 전달
+    _if.R.rdi = count;
+    _if.R.rsi = (char *)_if.rsp + 8;
+
+    hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true); // user stack을 16진수로 프린트
+    // ~ Argument Passing
+
+    /* If load failed, quit. */
+    palloc_free_page(file_name);
     if (!success)
         return -1;
 
-    /* 성공적으로 로드되었으면 프로세스 실행(context switching) */
-    do_iret (&_if);
-    NOT_REACHED ();
+    /* Start switched process. */
+    do_iret(&_if);
+    NOT_REACHED();
 }
+
+void argument_stack(char **parse, int count, void **rsp) // 주소를 전달받았으므로 이중 포인터 사용 // ~~~~~~~~~~~~~~~~~~~
+{
+    // 프로그램 이름, 인자 문자열 push
+    for (int i = count - 1; i > -1; i--)
+    {
+        for (int j = strlen(parse[i]); j > -1; j--)
+        {
+            (*rsp)--;                      // 스택 주소 감소
+            **(char **)rsp = parse[i][j]; // 주소에 문자 저장
+        }
+        parse[i] = *(char **)rsp; // parse[i]에 현재 rsp의 값 저장해둠(지금 저장한 인자가 시작하는 주소값)
+    }
+
+    // 정렬 패딩 push
+    int padding = (int)*rsp % 8;
+    for (int i = 0; i < padding; i++)
+    {
+        (*rsp)--;
+        **(uint8_t **)rsp = 0; // rsp 직전까지 값 채움
+    }
+
+    // 인자 문자열 종료를 나타내는 0 push
+    (*rsp) -= 8;
+    **(char ***)rsp = 0; // char* 타입의 0 추가
+
+    // 각 인자 문자열의 주소 push
+    for (int i = count - 1; i > -1; i--)
+    {
+        (*rsp) -= 8; // 다음 주소로 이동
+        **(char ***)rsp = parse[i]; // char* 타입의 주소 추가
+    }
+
+    // return address push
+    (*rsp) -= 8;
+    **(void ***)rsp = 0; // void* 타입의 0 추가
+}
+
 
 /* 주어진 TID에 해당하는 자식 프로세스가 종료될 때까지 기다리고, 해당 자식의 종료 상태를 반환.
  * 자식이 커널에 의해 종료된 경우(예: 예외로 인해 종료된 경우) -1을 반환.
