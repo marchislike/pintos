@@ -45,8 +45,8 @@ struct lock filesys_lock;
  * The syscall instruction works by reading the values from the the Model
  * Specific Register (MSR). For the details, see the manual. */
 
-#define MSR_STAR 0xc0000081			/* Segment selector msr */
-#define MSR_LSTAR 0xc0000082		/* Long mode SYSCALL target */
+#define MSR_STAR 0xc0000081					/* Segment selector msr */
+#define MSR_LSTAR 0xc0000082				/* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 
 const int STDIN = 1;
@@ -55,14 +55,14 @@ const int STDOUT = 2;
 void syscall_init(void)
 {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48 |
-							((uint64_t)SEL_KCSEG) << 32);
+													((uint64_t)SEL_KCSEG) << 32);
 	write_msr(MSR_LSTAR, (uint64_t)syscall_entry);
 
 	/* The interrupt service rountine should not serve any interrupts
 	 * until the syscall_entry swaps the userland stack to the kernel
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
-			  FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+						FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 
 	lock_init(&filesys_lock);
 }
@@ -70,69 +70,87 @@ void syscall_init(void)
 /* The main system call interface */
 void syscall_handler(struct intr_frame *f UNUSED)
 {
-	// TODO: Your implementation goes here.
+	// 시스템 콜 번호를 RAX 레지스터에서 읽어옴
 	int sys_number = f->R.rax;
+	// 시스템 콜 번호에 따라 작업 수행
 	switch (sys_number)
 	{
 
-	case SYS_HALT: /* Halt the operating system. */
+	// HALT 운영체제를 정지
+	case SYS_HALT:
 		halt();
 		break;
 
-	case SYS_EXIT: /* Terminate this process. */
-		exit(f->R.rdi);
+	// EXIT: 현재 프로세스를 종료함
+	case SYS_EXIT:		/* Terminate this process. */
+		exit(f->R.rdi); // RDI 레지스터에 저장된 종료 코드로 exit 호출
 		break;
 
-	case SYS_FORK: /* Clone current process. */
-		f->R.rax = fork(f->R.rdi, f);
+	// FORK: 현재 프로세스를 복제함
+	case SYS_FORK:									/* Clone current process. */
+		f->R.rax = fork(f->R.rdi, f); // RDI 레지스터에 있는 인자를 fork 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	// EXEC: 현재 프로세스를 다른 프로그램으로 전환함
 	case SYS_EXEC: /* Switch current process. */
+		// exec 함수가 실패할 경우 -1을 RAX에 저장
 		exec(f->R.rdi) == -1;
 		break;
 
-	case SYS_WAIT: /* Wait for a child process to die. */
-		f->R.rax = wait(f->R.rdi);
+	// WAIT: 자식 프로세스가 종료될 때까지 대기함
+	case SYS_WAIT:							 /* Wait for a child process to die. */
+		f->R.rax = wait(f->R.rdi); // RDI 레지스터에 있는 자식 프로세스의 PID를 wait 함수에 전달하고 결과를 RAX에 저장
 		break;
 
-	case SYS_CREATE: /* Create a file. */
-		f->R.rax = create(f->R.rdi, f->R.rsi);
+	// CREATE: 파일을 생성함
+	case SYS_CREATE:												 /* Create a file. */
+		f->R.rax = create(f->R.rdi, f->R.rsi); // RDI와 RSI 레지스터에 있는 인자를 create 함수에 전달하고 결과를 RAX에 저장
+		break;
 		break;
 
+	// REMOVE: 파일을 삭제함
 	case SYS_REMOVE: /* Delete a file. */
-		f->R.rax = remove(f->R.rdi);
+		f->R.rax = remove(f->R.rdi);	// RDI 레지스터에 있는 파일 이름을 remove 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	 // OPEN: 파일을 열음
 	case SYS_OPEN: /* Open a file. */
-		f->R.rax = open(f->R.rdi);
+		f->R.rax = open(f->R.rdi);	// RDI 레지스터에 있는 파일 이름을 open 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	// FILESIZE: 파일 크기를 가져옴
 	case SYS_FILESIZE: /* Obtain a file's size. */
-		f->R.rax = filesize(f->R.rdi);
+		f->R.rax = filesize(f->R.rdi);	// RDI 레지스터에 있는 파일 디스크립터를 filesize 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	// READ: 파일에서 읽음
 	case SYS_READ: /* Read from a file. */
-		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
+		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);	// RDI, RSI, RDX 레지스터의 값을 read 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	// WRITE: 파일에 씀
 	case SYS_WRITE: /* Write to a file. */
-		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
+		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);	// RDI, RSI, RDX 레지스터의 값을 write 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	// SEEK: 파일 내 위치를 변경함
 	case SYS_SEEK: /* Change position in a file. */
-		seek(f->R.rdi, f->R.rsi);
+		seek(f->R.rdi, f->R.rsi);	// RDI 레지스터에 있는 파일 디스크립터와 RSI 레지스터에 있는 오프셋을 seek 함수에 전달
 		break;
 
+	// TELL: 현재 파일 내 위치를 보고함
 	case SYS_TELL: /* Report current position in a file. */
-		f->R.rax = tell(f->R.rdi);
+		f->R.rax = tell(f->R.rdi);	// RDI 레지스터에 있는 파일 디스크립터를 tell 함수에 전달하고 결과를 RAX에 저장
 		break;
 
+	// CLOSE: 파일을 닫음
 	case SYS_CLOSE: /* Close a file. */
-		close(f->R.rdi);
+		close(f->R.rdi);	// RDI 레지스터에 있는 파일 디스크립터를 close 함수에 전달
 		break;
 
+	// 정의되지 않은 시스템 콜인 경우 -1로 종료
 	default:
-		exit(-1);
+		exit(-1);	// 잘못된 시스템 콜 번호인 경우 프로세스를 종료
 		break;
 	}
 }
@@ -179,7 +197,7 @@ int exec(char *cmd_line)
 	char *cmd_line_copy;
 	cmd_line_copy = palloc_get_page(PAL_ZERO);
 	if (cmd_line_copy == NULL)
-		exit(-1);							  // 메모리 할당 실패 시 status -1로 종료한다.
+		exit(-1);																// 메모리 할당 실패 시 status -1로 종료한다.
 	strlcpy(cmd_line_copy, cmd_line, PGSIZE); // cmd_line을 복사한다.
 
 	// 스레드의 이름을 변경하지 않고 바로 실행한다.
@@ -212,31 +230,31 @@ int open(const char *file_opened)
 {
 	// 파일이름이 유효한지 판단한다.
 	check_address(file_opened);
-	
+
 	// 락을 걸어준다.
 	// 여러 프로세스가 동시에 파일 시스템에 접근하는 것을 막기 위해 락을 건다.
-	// 이 락은 파일을 여는 동안 파일 시스템의 동시 접근을 제어하는 역할을 한다. 
+	// 이 락은 파일을 여는 동안 파일 시스템의 동시 접근을 제어하는 역할을 한다.
 	lock_acquire(&filesys_lock);
-	
+
 	// 파일 열기를 시도한다.
 	struct file *cur_file = filesys_open(file_opened);
-	
+
 	// 파일 열기를 실패 시
 	if (cur_file == NULL)
 	{
 		lock_release(&filesys_lock);
 		return -1;
 	}
-	
+
 	// 현재 스레드의 파일 디스크립터 테이블에 파일을 추가한다.
 	int fd = process_add_file(cur_file);
-	
+
 	// 파일 디스크립터 할당에 실패하면 파일을 닫는다.
 	if (fd == -1)
 	{
 		file_close(cur_file);
 	}
-	
+
 	// 처음에 건 락을 해제한다.
 	lock_release(&filesys_lock);
 	return fd;
@@ -246,7 +264,7 @@ int filesize(int fd)
 {
 	// 파일 디스크럽터 테이블 fd번째에 있는 파일을 가져온다.
 	struct file *cur_file = process_get_file(fd);
-	
+
 	// 여기선 check_address()를 쓰면 안 된다.
 	// 파일 디스크럽터 테이블이 커널 영역에 있기 때문이다.
 	if (cur_file == NULL)
@@ -259,20 +277,20 @@ int filesize(int fd)
 int read(int fd, void *buffer, unsigned size)
 {
 	// STDOUT_FILENO : 1 -> 읽을 수 없다.
-	if(fd == STDOUT_FILENO)
+	if (fd == STDOUT_FILENO)
 		return -1;
-	
+
 	// 버퍼의 주소를 검증한다.
 	check_address(buffer);
-	
+
 	// 데이터를 저장할 위치를 가리킨다.
 	char *ptr = (char *)buffer;
 	int bytes_read = 0;
-	
+
 	// 파일 시스템 작업을 하는 동안, 락을 걸어준다.
 	// 현재 프로세스가 작업을 하는 도중, 다른 프로세스의 접근이 막힌다.
 	lock_acquire(&filesys_lock);
-	
+
 	// STDIN_FILENO : 0 -> 한 문자씩 입력받아 buffer에 저장한다.
 	if (fd == STDIN_FILENO)
 	{
@@ -284,7 +302,7 @@ int read(int fd, void *buffer, unsigned size)
 	}
 	// 표준 입력이 아닌 경우
 	// 파일 디스크립터에 연결된 파일을 가져온다.
-	// file_read(file, buffer, size)로, buffer로 읽어온다. 
+	// file_read(file, buffer, size)로, buffer로 읽어온다.
 	else
 	{
 		struct file *file = process_get_file(fd);
@@ -295,7 +313,7 @@ int read(int fd, void *buffer, unsigned size)
 		}
 		bytes_read = file_read(file, buffer, size);
 	}
-	
+
 	// 락을 풀어주고, bytes_read를 반환한다.
 	lock_release(&filesys_lock);
 	return bytes_read;
@@ -323,7 +341,7 @@ int write(int fd, void *buffer, unsigned size)
 	}
 	// 표준 출력이 아닌 경우
 	// 파일 디스크립터에 연결된 파일을 가져온다.
-	// file_write(file, buffer, size)로, buffer에 있는 데이터를 file에 쓴다. 
+	// file_write(file, buffer, size)로, buffer에 있는 데이터를 file에 쓴다.
 	else
 	{
 		struct file *file = process_get_file(fd);
@@ -339,14 +357,13 @@ int write(int fd, void *buffer, unsigned size)
 	return bytes_write;
 }
 
-
-void seek(int fd, unsigned position) 
+void seek(int fd, unsigned position)
 {
 	// 파일 디스크립터에 연결된 파일을 가져온다.
-    struct file *file = process_get_file(fd);
-    if (file != NULL)
+	struct file *file = process_get_file(fd);
+	if (file != NULL)
 		// file.c의 file_seek()를 활용한다.
-        file_seek(file, position);
+		file_seek(file, position);
 }
 
 unsigned tell(int fd)
@@ -364,10 +381,13 @@ void close(int fd)
 	process_close_file(fd);
 }
 
+// 주소 유효성 검사
 void check_address(void *addr)
 {
+	// 주소가 NULL이거나 사용자 가상 주소가 아닐 경우
 	if (addr == NULL || !is_user_vaddr(addr))
 	{
+		// 유효하지 않은 주소일 경우 프로세스를 종료
 		exit(-1);
 	}
 }
